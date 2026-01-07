@@ -14,7 +14,7 @@ if (!API_KEY) {
     console.warn("ECHO_PATHS WARNING: HACKCLUB_API_KEY is missing from environment.");
 }
 
-const HACKCLUB_API_URL = "https://ai.hackclub.com/proxy/v1/chat/completions";
+const HACKCLUB_API_URL = "/api/proxy/v1/chat/completions";
 
 // CONSTANTS FOR CONTINUOUS STREAMING
 const TARGET_SEGMENT_DURATION_SEC = 60; 

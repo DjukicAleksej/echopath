@@ -34,6 +34,14 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        proxy: {
+          '/api': {
+            target: 'https://ai.hackclub.com',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/api/, ''),
+            secure: true,
+          }
+        }
       },
       plugins: [react()],
       define: {
