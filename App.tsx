@@ -45,10 +45,8 @@ function App() {
   // Track which segment the user is currently listening to (fed back from StoryPlayer)
   const [currentPlayingIndex, setCurrentPlayingIndex] = useState<number>(0);
 
-  // --- Google Maps Bootstrap ---
+  // --- Hack Club AI Bootstrap ---
   useEffect(() => {
-    const SCRIPT_ID = 'google-maps-script';
-    
     const getApiKey = () => {
         const key = process.env.HACKCLUB_API_KEY;
         if (!key) return null;
@@ -61,24 +59,10 @@ function App() {
     console.log(process.env.HACKCLUB_API_KEY)
 
     if (!apiKey) {
-        setScriptError("API Key is missing from environment variables.");
+        setScriptError("Hack Club API Key is missing from environment variables.");
         console.error("Critical: process.env.HACKCLUB_API_KEY is missing or empty.");
         return;
     }
-    
-    if (document.getElementById(SCRIPT_ID) || window.google?.maps) return;
-
-
-
-    const script = document.createElement('script');
-    script.id = SCRIPT_ID;
-    script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBdf3qEHerho4yhseDl3vf-06ZHUcub-rI&loading=async&v=weekly&libraries=places`;
-    script.async = true;
-    script.defer = true;
-    script.onerror = () => setScriptError("Google Maps failed to load.");
-    // @ts-ignore
-    window.gm_authFailure = () => setScriptError("Google Maps authentication failed. Please check your API key.");
-    document.head.appendChild(script);
   }, []);
 
   // --- Continuous Buffering Engine ---

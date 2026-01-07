@@ -16,20 +16,18 @@ export default defineConfig(({ mode }) => {
       if (!key) return undefined;
       const k = key.trim();
       // Filter out common placeholders or invalid values
-      if (k === '' || k === 'GEMINI_API_KEY' || k === 'API_KEY' || k.includes('YOUR_API_KEY')) return undefined;
+      if (k === '' || k.includes('YOUR_API_KEY')) return undefined;
       return k;
     };
 
-    // Try to find a valid key in various locations
-    const apiKey = cleanKey(process.env.API_KEY) || 
-                   cleanKey(process.env.GEMINI_API_KEY) || 
-                   cleanKey(env.API_KEY) || 
-                   cleanKey(env.GEMINI_API_KEY);
+    // Try to find Hack Club API key
+    const hackclubApiKey = cleanKey(process.env.HACKCLUB_API_KEY) || 
+                          cleanKey(env.HACKCLUB_API_KEY);
 
-    if (!apiKey) {
-       console.warn("⚠️  WARNING: API_KEY is undefined. The app may not function correctly.");
+    if (!hackclubApiKey) {
+       console.warn("⚠️  WARNING: HACKCLUB_API_KEY is undefined. The app may not function correctly.");
     } else {
-       console.log("✅ API_KEY loaded for build.");
+       console.log("✅ HACKCLUB_API_KEY loaded for build.");
     }
 
     return {
@@ -39,9 +37,8 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react()],
       define: {
-        // Correctly inject the string value. 
-        // If apiKey is undefined, it sets it to undefined (or empty string if preferred, but undefined is safer to detect)
-        'process.env.API_KEY': apiKey ? JSON.stringify(apiKey) : 'undefined',
+        // Inject Hack Club API key
+        'process.env.HACKCLUB_API_KEY': hackclubApiKey ? JSON.stringify(hackclubApiKey) : 'undefined',
       },
       resolve: {
         alias: {

@@ -9,12 +9,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { MapPin, Navigation, Loader2, Footprints, Car, CloudRain, Sparkles, ScrollText, Sword } from 'lucide-react';
 import { RouteDetails, AppState, StoryStyle } from '../types';
 
-declare global {
-  interface Window {
-    google: any;
-  }
-}
-
 interface Props {
   onRouteFound: (details: RouteDetails) => void;
   appState: AppState;
@@ -29,6 +23,41 @@ const STYLES: { id: StoryStyle; label: string; icon: React.ElementType; desc: st
     { id: 'HISTORICAL', label: 'Historical Epic', icon: ScrollText, desc: 'Grand, dramatic, echoing the past.' },
     { id: 'FANTASY', label: 'Fantasy Adventure', icon: Sword, desc: 'An epic quest through a magical realm.' },
 ];
+
+// Simple geocoding function using Nominatim (OpenStreetMap)
+const geocodeAddress = async (address: string): Promise<{ lat: number; lon: number; display_name: string } | null> => {
+    try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`);
+        const data = await response.json();
+        if (data && data.length > 0) {
+            return {
+                lat: parseFloat(data[0].lat),
+                lon: parseFloat(data[0].lon),
+                display_name: data[0].display_name
+            };
+        }
+        return null;
+    } catch (error) {
+        console.error('Geocoding error:', error);
+        return null;
+    }
+};
+
+// Simple routing function using OSRM (Open Source Routing Machine)
+const calculateRoute = async (start: { lat: number; lon: number }, end: { lat: number; lon: number }, travelMode: TravelMode) => {
+    const profile = travelMode === 'WALKING' ? 'foot' : 'driving';
+    try {
+        const response = await fetch(`https://router.project-osrm.org/route/v1/${profile}/${start.lon},${start.lat};${end.lon},${end.lat}?overview=false`);
+        const data = await response.json();
+        if (data.routes && data.routes.length > 0) {
+            return data.routes[0];
+        }
+        return null;
+    } catch (error) {
+        console.error('Routing error:', error);
+        return null;
+    }
+};
 
 const RoutePlanner: React.FC<Props> = ({ onRouteFound, appState, externalError }) => {
   const [startAddress, setStartAddress] = useState('');
@@ -48,131 +77,73 @@ const RoutePlanner: React.FC<Props> = ({ onRouteFound, appState, externalError }
     }
   }, [externalError]);
 
-  // Initialize Classic Autocomplete
-  useEffect(() => {
-    let isMounted = true;
-
-    const initAutocomplete = async () => {
-        if (!window.google?.maps?.places) return;
-        
-        try {
-             const setupAutocomplete = (
-                 inputElement: HTMLInputElement | null,
-                 setAddress: (addr: string) => void
-             ) => {
-                 if (!inputElement) return;
-
-                 const autocomplete = new window.google.maps.places.Autocomplete(inputElement, {
-                     fields: ['formatted_address', 'geometry', 'name'],
-                     types: ['geocode', 'establishment']
-                 });
-
-                 autocomplete.addListener('place_changed', () => {
-                     if (!isMounted) return;
-                     const place = autocomplete.getPlace();
-                     
-                     if (!place.geometry || !place.geometry.location) {
-                         if (inputElement.value && window.google.maps.Geocoder) {
-                             const geocoder = new window.google.maps.Geocoder();
-                             geocoder.geocode({ address: inputElement.value }, (results: any, status: any) => {
-                                 if (status === 'OK' && results[0]) {
-                                     setAddress(results[0].formatted_address);
-                                     inputElement.value = results[0].formatted_address;
-                                 }
-                             });
-                         }
-                         return;
-                     }
-
-                     const address = place.formatted_address || place.name;
-                     setAddress(address);
-                     inputElement.value = address;
-                 });
-             };
-
-             setupAutocomplete(startInputRef.current, setStartAddress);
-             setupAutocomplete(endInputRef.current, setEndAddress);
-
-        } catch (e) {
-            console.error("Failed to initialize Places Autocomplete:", e);
-            if (isMounted) setError("Location search failed to initialize. Please refresh.");
-        }
-    };
-
-    if (window.google?.maps?.places) {
-        initAutocomplete();
-    } else {
-        const interval = setInterval(() => {
-            if (window.google?.maps?.places) {
-                clearInterval(interval);
-                initAutocomplete();
-            }
-        }, 300);
-        return () => {
-            isMounted = false;
-            clearInterval(interval);
-        };
-    }
-    
-    return () => { isMounted = false; };
-  }, []);
-
-  const handleCalculate = () => {
+  const handleCalculate = async () => {
     const finalStart = startInputRef.current?.value || startAddress;
     const finalEnd = endInputRef.current?.value || endAddress;
 
     if (!finalStart || !finalEnd) {
-      setError("Please search for and select both a start and end location.");
+      setError("Please enter both a start and end location.");
       return;
-    }
-
-    if (!window.google?.maps) {
-         setError("Google Maps API is not loaded yet. Please refresh.");
-         return;
     }
 
     setError(null);
     setIsLoading(true);
 
-    const directionsService = new window.google.maps.DirectionsService();
-    directionsService.route(
-      {
-        origin: finalStart,
-        destination: finalEnd,
-        travelMode: window.google.maps.TravelMode[travelMode],
-      },
-      (result: any, status: any) => {
-        setIsLoading(false);
-        if (status === window.google.maps.DirectionsStatus.OK) {
-          const leg = result.routes[0].legs[0];
+    try {
+        // Geocode both addresses
+        const startCoords = await geocodeAddress(finalStart);
+        const endCoords = await geocodeAddress(finalEnd);
 
-          // 4 hours limit (14400 seconds) to prevent generation timeouts
-          if (leg.duration.value > 14400) {
-            setError("Sorry, this journey is too long. Please select a route under 4 hours.");
+        if (!startCoords || !endCoords) {
+            setError("Could not find one or both locations. Please check the addresses and try again.");
+            setIsLoading(false);
             return;
-          }
-
-          onRouteFound({
-            startAddress: leg.start_address,
-            endAddress: leg.end_address,
-            distance: leg.distance.text,
-            duration: leg.duration.text,
-            durationSeconds: leg.duration.value,
-            travelMode: travelMode,
-            voiceName: 'Kore', // Updated to a valid Gemini TTS voice
-            storyStyle: selectedStyle
-          });
-        } else {
-          console.error("Directions error:", status, result);
-          if (status === 'ZERO_RESULTS') {
-              const mode = travelMode.toLowerCase();
-              setError(`Sorry, we could not calculate ${mode} directions from "${finalStart}" to "${finalEnd}"`);
-          } else {
-              setError("Could not calculate route. Please check the locations and try again.");
-          }
         }
-      }
-    );
+
+        // Calculate route
+        const route = await calculateRoute(startCoords, endCoords, travelMode);
+
+        if (!route) {
+            setError("Could not calculate route between these locations. Please try different locations.");
+            setIsLoading(false);
+            return;
+        }
+
+        const duration = route.duration; // in seconds
+        const distance = route.distance; // in meters
+
+        // 4 hours limit (14400 seconds) to prevent generation timeouts
+        if (duration > 14400) {
+            setError("Sorry, this journey is too long. Please select a route under 4 hours.");
+            setIsLoading(false);
+            return;
+        }
+
+        // Format duration and distance
+        const hours = Math.floor(duration / 3600);
+        const minutes = Math.floor((duration % 3600) / 60);
+        const durationText = hours > 0 ? `${hours}h ${minutes}min` : `${minutes}min`;
+        
+        const distanceKm = (distance / 1000).toFixed(1);
+        const distanceText = `${distanceKm} km`;
+
+        onRouteFound({
+            startAddress: startCoords.display_name,
+            endAddress: endCoords.display_name,
+            distance: distanceText,
+            duration: durationText,
+            durationSeconds: duration,
+            travelMode: travelMode,
+            voiceName: 'Kore',
+            storyStyle: selectedStyle
+        });
+
+    } catch (error) {
+        console.error('Route calculation error:', error);
+        setError("Failed to calculate route. Please try again.");
+    } finally {
+        setIsLoading(false);
+    }
   };
 
   const isLocked = appState > AppState.ROUTE_CONFIRMED;
@@ -182,7 +153,7 @@ const RoutePlanner: React.FC<Props> = ({ onRouteFound, appState, externalError }
       <div className="space-y-8 bg-white/80 backdrop-blur-lg p-8 md:p-10 rounded-[2rem] shadow-2xl shadow-stone-200/50 border border-white/50">
         <div className="space-y-1">
             <h2 className="text-2xl font-serif text-editorial-900">Plan Your Journey</h2>
-            <p className="text-stone-500">Search locations and customize your experience.</p>
+            <p className="text-stone-500">Enter locations and customize your experience.</p>
         </div>
 
         <div className="space-y-4">
